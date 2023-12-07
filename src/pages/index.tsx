@@ -48,7 +48,6 @@ type LockedContractInfo = {
     platform_fee_basis_points: number;
     platform_fee_recipient: string;
   };
-  baseUriCount: string;
 };
 
 export default function Home() {
@@ -56,7 +55,8 @@ export default function Home() {
   const [isLoadingLockedContract, setIsLoadingLockedContract] = useState(false);
   const lockedContractRef = useRef<HTMLInputElement>(null);
   const lockedChainSlugRef = useRef<HTMLInputElement>(null);
-  const loadSnapshot = async () => {
+
+  const loadContract = async () => {
     const contractAddress = lockedContractRef.current?.value;
     if (!contractAddress) {
       return alert(
@@ -84,7 +84,6 @@ export default function Home() {
           metadata,
           primarySaleRecipient,
           platformFeesInfo,
-          baseUriCount,
         ] = await Promise.all([
           lockedContract.erc721.totalClaimedSupply(),
           lockedContract.erc721.totalUnclaimedSupply(),
@@ -93,7 +92,6 @@ export default function Home() {
           lockedContract.metadata.get(),
           lockedContract.call("primarySaleRecipient", []),
           lockedContract.platformFees.get(),
-          lockedContract.call("getBaseURICount", []),
         ]);
         const allTokenIds: number[] = Array.from(
           { length: totalCount.toNumber() },
@@ -104,6 +102,12 @@ export default function Home() {
             metadata.name = metadata.name.replace("[Locked]", "").trim();
         }
         let allTokenUris: string[] = [];
+
+        /**
+         * For Starter tier there's a 100 RPC requests per second
+         * so we would have to break the array into chunks and fetch the data _consequentially_
+         * to prevent any unwanted request failure
+         */
         const chunkSize = 100; // RPC limit
         const chunkedArrays: number[][] = [];
         for (let i = 0; i < allTokenIds.length; i += chunkSize) {
@@ -120,6 +124,7 @@ export default function Home() {
         }
 
         let allOwners: OwnedToken[] = [];
+
         if (totalUnclaimedSupply.gt(0)) {
           const claimedTokenIds = allTokenIds.slice(
             0,
@@ -156,7 +161,6 @@ export default function Home() {
           metadata: metadata as NFTContractDeployMetadata,
           platformFeesInfo,
           primarySaleRecipient,
-          baseUriCount: baseUriCount.toString(),
         });
       } else if (isErc1155) {
         alert("ERC1155 contract not supported yet. Stay tuned");
@@ -168,14 +172,9 @@ export default function Home() {
     setIsLoadingLockedContract(false);
   };
 
-  const [chainToDeploy, setChainToDeploy] = useState<Chain>();
-  const selectChainToDeploy = (slug: string) => {
-    const chain = allChains.find((item) => item.slug === slug) ?? undefined;
-    setChainToDeploy(chain);
-  };
   return (
     <>
-      <div className="text-black flex flex-col mt-20">
+      <div className="text-black flex flex-col my-20">
         <div className="text-center text-white my-3">
           IMPORTANT: This tool only supports{" "}
           <a
@@ -197,8 +196,6 @@ export default function Home() {
           <input
             type="text"
             list="network-list"
-            name="networkInput"
-            id="networkInput"
             placeholder="ethereum"
             className="input input-bordered w-full px-3 py-2"
             ref={lockedChainSlugRef}
@@ -214,7 +211,7 @@ export default function Home() {
           <div>
             <button
               disabled={isLoadingLockedContract || Boolean(lockedContract)}
-              onClick={loadSnapshot}
+              onClick={loadContract}
               className="bg-white px-3 py-2 flex w-[200px] disabled:bg-gray-500 disabled:cursor-not-allowed"
             >
               {isLoadingLockedContract ? (
@@ -254,48 +251,60 @@ export default function Home() {
           )}
         </div>
 
-        {/* Deploy new contract */}
+        {/* Deploy new contract with the info gathered from `loadContract()` */}
         {lockedContract && (
-          <div className="mx-auto lg:w-[600px] flex flex-col gap-5 border rounded p-3 mt-5">
-            <div className="text-white">Step 2: Deploy new contract</div>
-            <div className="text-xs text-white">
-              Select the (new) network to deploy
-            </div>
-            <input
-              type="text"
-              list="network-list-2"
-              name="networkInput"
-              id="networkInput"
-              placeholder="ethereum"
-              className="input input-bordered w-full px-3 py-2"
-              onChange={(e) => selectChainToDeploy(e.target.value)}
-            />
-            <datalist id="network-list-2">
-              {allChains.map((item, index) => (
-                <option key={item.chainId} value={item.slug}>
-                  {item.name}
-                </option>
-              ))}
-            </datalist>
-            {chainToDeploy && (
-              <ThirdwebProvider activeChain={chainToDeploy} clientId={clientId}>
-                <div className="text-xs text-white">
-                  Deploying <b>{lockedContract.contractType}</b> contract on{" "}
-                  {chainToDeploy.name} (chainId: {chainToDeploy.chainId})
-                </div>
-                <DeployNftDrop
-                  lockedContract={lockedContract}
-                  deployChain={chainToDeploy}
-                />
-              </ThirdwebProvider>
-            )}
-          </div>
+          <SelectNewNetworkToDeploy lockedContract={lockedContract} />
         )}
       </div>
-      <div className="mb-20"></div>
     </>
   );
 }
+
+const SelectNewNetworkToDeploy = ({
+  lockedContract,
+}: {
+  lockedContract: LockedContractInfo;
+}) => {
+  const [chainToDeploy, setChainToDeploy] = useState<Chain>();
+  const selectChainToDeploy = (slug: string) => {
+    const chain = allChains.find((item) => item.slug === slug) ?? undefined;
+    setChainToDeploy(chain);
+  };
+  return (
+    <div className="mx-auto lg:w-[600px] flex flex-col gap-5 border rounded p-3 mt-5">
+      <div className="text-white">Step 2: Deploy new contract</div>
+      <div className="text-xs text-white">
+        Select the (new) network to deploy
+      </div>
+      <input
+        type="text"
+        list="network-list-2"
+        placeholder="ethereum"
+        className="input input-bordered w-full px-3 py-2"
+        onChange={(e) => selectChainToDeploy(e.target.value)}
+      />
+      <datalist id="network-list-2">
+        {allChains.map((item, index) => (
+          <option key={item.chainId} value={item.slug}>
+            {item.name}
+          </option>
+        ))}
+      </datalist>
+      {chainToDeploy && (
+        <ThirdwebProvider activeChain={chainToDeploy} clientId={clientId}>
+          <div className="text-xs text-white">
+            Deploying <b>{lockedContract.contractType}</b> contract on{" "}
+            {chainToDeploy.name} (chainId: {chainToDeploy.chainId})
+          </div>
+          <DeployNftDrop
+            lockedContract={lockedContract}
+            deployChain={chainToDeploy}
+          />
+        </ThirdwebProvider>
+      )}
+    </div>
+  );
+};
 
 const DeployNftDrop = ({
   lockedContract,
@@ -342,6 +351,12 @@ const DeployNftDrop = ({
       setLazyMintingNfts(true);
       const newContract = await sdk.getContract(newContractAddress, "nft-drop");
       const folderArrays: { [key: string]: string[] } = {};
+
+      /**
+       * An NFTDrop contract can have multiple batches (baseURIs)
+       * so we have to lazyMint each batch separately
+       * and batch them with `multicall`
+       */
       lockedContract.allTokenUris
         .map((item) => item.replace("ipfs://", ""))
         .forEach((item) => {
@@ -354,13 +369,12 @@ const DeployNftDrop = ({
         });
       const encoded = Object.keys(folderArrays).map((baseUri) =>
         newContract.encoder.encode("lazyMint", [
-          folderArrays[baseUri].length,
-          baseUri,
-          "0x",
+          folderArrays[baseUri].length, // _amount
+          baseUri, // _baseURI
+          "0x", // _extraData
         ])
       );
       const transaction = await newContract.call("multicall", [encoded]);
-      console.log(transaction);
       setLazyMintHash(
         // @ts-ignore - what da hell some type errors here
         transaction.receipt?.transactionHash ?? "unable to fetch tx hash"
@@ -373,6 +387,9 @@ const DeployNftDrop = ({
 
   const newContractLink = `thirdweb.com/${chain?.slug}/${newContractAddress}`;
 
+  /**
+   * Download the snapshot content for AirdropERC721
+   */
   const downloadAirdropContent = () => {
     const data = lockedContract.allOwners.map((item) => ({
       recipient: item.owner,
