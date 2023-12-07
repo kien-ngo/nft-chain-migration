@@ -4,11 +4,18 @@ import {
   ThirdwebProvider,
   useAddress,
   useChain,
+  useContract,
   useNetworkMismatch,
   useSDK,
   useSwitchChain,
 } from "@thirdweb-dev/react";
-import { NFTContractDeployMetadata, ThirdwebSDK } from "@thirdweb-dev/sdk";
+import {
+  ClaimConditionInput,
+  NATIVE_TOKEN_ADDRESS,
+  NFTContractDeployMetadata,
+  NFTDrop,
+  ThirdwebSDK,
+} from "@thirdweb-dev/sdk";
 import { BigNumber } from "ethers";
 import { useRef, useState } from "react";
 
@@ -178,6 +185,7 @@ export default function Home() {
         <div className="text-center text-white my-3">
           IMPORTANT: This tool only supports{" "}
           <a
+            target="_blank"
             href="https://thirdweb.com/thirdweb.eth/DropERC721"
             className="text-blue-500 underline"
           >
@@ -186,7 +194,9 @@ export default function Home() {
           at the moment
         </div>
         <div className="mx-auto lg:w-[600px] flex flex-col gap-5 border rounded p-3">
-          <div className="text-white">Step 1: Enter your locked contract</div>
+          <div className="text-white text-lg font-bold">
+            Step 1: Enter your locked contract
+          </div>
           <input
             type="text"
             placeholder="Contract address"
@@ -215,7 +225,7 @@ export default function Home() {
               className="bg-white px-3 py-2 flex w-[200px] disabled:bg-gray-500 disabled:cursor-not-allowed"
             >
               {isLoadingLockedContract ? (
-                <Spinner size={15} />
+                <Spinner size={12} />
               ) : (
                 <span className="m-auto">
                   {lockedContract ? "Contract loaded" : "Load contract"}
@@ -272,7 +282,9 @@ const SelectNewNetworkToDeploy = ({
   };
   return (
     <div className="mx-auto lg:w-[600px] flex flex-col gap-5 border rounded p-3 mt-5">
-      <div className="text-white">Step 2: Deploy new contract</div>
+      <div className="text-white text-lg font-bold">
+        Step 2: Deploy new contract
+      </div>
       <div className="text-xs text-white">
         Select the (new) network to deploy
       </div>
@@ -324,7 +336,9 @@ const DeployNftDrop = ({
     ...lockedContract.platformFeesInfo,
     primary_sale_recipient: lockedContract.primarySaleRecipient,
   };
-  const [newContractAddress, setNewContractAddress] = useState<string>();
+  const [newContractAddress, setNewContractAddress] = useState<string>(
+    "0x3984430c79DF7435c9282B33F37ED0e36106A376"
+  );
   const deployContract = async () => {
     if (!sdk || !address) return;
     try {
@@ -386,6 +400,7 @@ const DeployNftDrop = ({
   };
 
   const newContractLink = `thirdweb.com/${chain?.slug}/${newContractAddress}`;
+  const { contract: newContract } = useContract(newContractAddress, "nft-drop");
 
   /**
    * Download the snapshot content for AirdropERC721
@@ -416,117 +431,196 @@ const DeployNftDrop = ({
       <div>
         <ConnectWallet switchToActiveChain={true} />
       </div>
-      {address && !isMismatched && (
+      {address && !isMismatched && sdk && (
+        <>
+          {newContractAddress && newContract && (
+            <div className="text-white">
+              <div className="text-green-500 font-bold">
+                New contract deployed successfully at:
+              </div>
+              <div>
+                <a
+                  className="text-blue-500 underline"
+                  target="_blank"
+                  href={`https://${newContractLink}`}
+                >
+                  {newContractLink}
+                </a>
+              </div>
+
+              <div className="text-lg font-bold mt-10">
+                Step 3: Upload {lockedContract.totalCount.toString()} NFTs from
+                old collection
+              </div>
+              <div>
+                <button
+                  disabled={lazyMintingNfts || Boolean(lazyMintHash)}
+                  className="bg-white px-3 py-2 flex w-[200px] text-black disabled:bg-gray-500 disabled:cursor-not-allowed"
+                  onClick={uploadNftsFromOldCollection}
+                >
+                  {lazyMintingNfts ? (
+                    <Spinner size={12} />
+                  ) : (
+                    <span className="mx-auto">
+                      {lazyMintHash ? "Uploaded" : "Upload NFTs"}
+                    </span>
+                  )}
+                </button>
+              </div>
+              {lazyMintHash ||
+                (true && (
+                  <>
+                    <div className="mt-5">
+                      <b className="text-green-500">Success</b> <br />
+                      Transaction hash: {lazyMintHash}
+                    </div>
+                    <CreateOnlyOwnerPhaseAndDistribute
+                      lockedContract={lockedContract}
+                      address={address}
+                      sdk={sdk}
+                      newContract={newContract}
+                    />
+                  </>
+                ))}
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+};
+
+const CreateOnlyOwnerPhaseAndDistribute = ({
+  lockedContract,
+  newContract,
+  sdk,
+  address,
+}: {
+  lockedContract: LockedContractInfo;
+  newContract: NFTDrop;
+  sdk: ThirdwebSDK;
+  address: string;
+}) => {
+  const [isSettingClaimPhase, setIsSettingClaimPhase] =
+    useState<boolean>(false);
+  const [claimPhaseAdded, setClaimPhaseAdded] = useState<boolean>(false);
+  // Taken from Dashboard source code
+  const DEFAULT_PHASE: ClaimConditionInput = {
+    startTime: new Date(),
+    maxClaimableSupply: "unlimited",
+    maxClaimablePerWallet: "unlimited",
+    waitInSeconds: "0",
+    price: "0",
+    currencyAddress: NATIVE_TOKEN_ADDRESS,
+    snapshot: undefined,
+    merkleRootHash: undefined,
+    metadata: {
+      name: "only-owner-claim-phase",
+    },
+  };
+
+  const value = {
+    ...DEFAULT_PHASE,
+    maxClaimablePerWallet: "0",
+    snapshot: address
+      ? [
+          {
+            address: address,
+            maxClaimable: "unlimited",
+            price: "0",
+          },
+        ]
+      : [],
+  };
+
+  const createOwnerOnlyClaimPhase = async () => {
+    try {
+      setIsSettingClaimPhase(true);
+      await newContract.claimConditions.set([value]);
+      setClaimPhaseAdded(true);
+    } catch (err) {
+      console.log(err);
+    }
+    setIsSettingClaimPhase(false);
+  };
+
+  const totalAmountToClaim = lockedContract.totalClaimedSupply.toString();
+
+  return (
+    <>
+      <div className="mt-10">
+        <div className="text-lg font-bold">
+          Step 4: Claim {totalAmountToClaim} NFT(s)
+        </div>
         <div>
+          You had a total of {totalAmountToClaim} NFT(s) claimed from the old
+          collection. You would need to distribute those tokens back to the
+          holders
+        </div>
+
+        <div>
+          {/* It says Claim on the button but it's actually "create claim phase" */}
           <button
-            disabled={deployingContract || Boolean(newContractAddress)}
-            className="bg-white px-3 py-2 flex w-[200px] disabled:bg-gray-500 disabled:cursor-not-allowed"
-            onClick={deployContract}
+            disabled={isSettingClaimPhase || claimPhaseAdded}
+            className="bg-white px-3 py-2 flex w-[200px] text-black disabled:bg-gray-500 disabled:cursor-not-allowed"
+            onClick={createOwnerOnlyClaimPhase}
           >
-            {deployingContract ? (
-              <Spinner size={15} />
+            {isSettingClaimPhase ? (
+              <Spinner size={12} />
             ) : (
               <span className="m-auto">
-                {newContractAddress ? "Deployed" : "Deploy"}
+                {claimPhaseAdded ? "Claimed" : "Claim"}
               </span>
             )}
           </button>
         </div>
+      </div>
+
+      {true && (
+        <>
+          <DistributeTokensViaClaiming
+            newContract={newContract}
+            address={address}
+          />
+        </>
       )}
+    </>
+  );
+};
 
-      {newContractAddress && (
-        <div className="text-white">
-          <div className="text-green-500 font-bold">
-            New contract deployed successfully at:
-          </div>
-          <div>
-            <a
-              className="text-blue-500 underline"
-              target="_blank"
-              href={`https://${newContractLink}`}
-            >
-              {newContractLink}
-            </a>
-          </div>
+const DistributeTokensViaClaiming = ({
+  newContract,
+  address,
+}: {
+  newContract: NFTDrop;
+  address: string;
+}) => {
+  const [isBatchClaiming, setIsBatchClaiming] = useState<boolean>(false);
+  const [batchClaimed, setBatchClaimed] = useState<boolean>(false);
 
-          <div className="font-bold mt-10">
-            Step 3: Upload {lockedContract.totalCount.toString()} NFTs from old
-            collection
-          </div>
-          <div>
-            <button
-              disabled={lazyMintingNfts || Boolean(lazyMintHash)}
-              className="bg-white px-3 py-2 flex w-[200px] text-black disabled:bg-gray-500 disabled:cursor-not-allowed"
-              onClick={uploadNftsFromOldCollection}
-            >
-              {lazyMintingNfts ? (
-                <Spinner size={15} />
-              ) : (
-                <span className="mx-auto">
-                  {lazyMintHash ? "Uploaded" : "Upload NFTs"}
-                </span>
-              )}
-            </button>
-          </div>
-          {lazyMintHash && (
-            <>
-              <div className="mt-5">
-                <b className="text-green-500">Success</b> <br />
-                Transaction hash: {lazyMintHash}
-              </div>
+  const batchClaimingTokens = async () => {
+    const test = await newContract.claimConditions.getActive();
+    console.log({ test });
+  };
 
-              <div className="mt-10">
-                <hr />
-                <div className="mt-5 text-yellow-500 font-bold">
-                  What&apos;s next?
-                </div>
-                <div>
-                  You had a total of{" "}
-                  {lockedContract.totalClaimedSupply.toString()} NFT(s) claimed
-                  from the old collection. There are a few options from here on:
-                  <br />
-                  <br />
-                  1. You can batch claim all{" "}
-                  {lockedContract.totalClaimedSupply.toString()} NFT(s){" "}
-                  <a
-                    href={`https://${newContractLink}/embed`}
-                    className="text-blue-500 underline"
-                  >
-                    here
-                  </a>{" "}
-                  and distribute <i>the exact tokens</i> to your token holders
-                  using{" "}
-                  <a
-                    onClick={downloadAirdropContent}
-                    className="text-blue-500 underline cursor-pointer"
-                  >
-                    this snapshot
-                  </a>{" "}
-                  and our{" "}
-                  <a
-                    href="https://thirdweb.com/thirdweb.eth/AirdropERC721"
-                    target="_blank"
-                  >
-                    AirdropERC721 contract
-                  </a>
-                  <br />
-                  <br />
-                  2. You can open a free [Allowlist Only] claim phase for the
-                  token holders. Keep in mind that using this method the
-                  claimers are not guaranteed to receive the same exact tokens
-                  that they own from the old collection.{" "}
-                  <a
-                    onClick={downloadSnapshot}
-                    className="text-blue-500 underline cursor-pointer"
-                  >
-                    Download snapshot for the claim phase
-                  </a>
-                </div>
-              </div>
-            </>
+  return (
+    <>
+      <div className="mt">
+        <div>Step 5: Distribute tokens</div>
+        <button
+          disabled={isBatchClaiming || batchClaimed}
+          className="bg-white px-3 py-2 flex w-[200px] text-black disabled:bg-gray-500 disabled:cursor-not-allowed"
+          onClick={batchClaimingTokens}
+        >
+          {isBatchClaiming ? (
+            <Spinner size={12} />
+          ) : (
+            <span className="m-auto">
+              {batchClaimed ? "Distributed" : "Distribute"}
+            </span>
           )}
-        </div>
-      )}
+        </button>
+      </div>
     </>
   );
 };
