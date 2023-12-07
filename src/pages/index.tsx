@@ -73,7 +73,6 @@ export default function Home() {
       setIsLoadingLockedContract(true);
       const sdk = new ThirdwebSDK(chainSlug, { clientId });
       const lockedContract = await sdk.getContract(contractAddress);
-      const lockedMetadata = lockedContract.metadata;
       const isErc721 = "erc721" in lockedContract;
       const isErc1155 = "erc1155" in lockedContract;
       if (isErc721) {
@@ -145,18 +144,6 @@ export default function Home() {
             );
           }
         }
-
-        console.log({
-          totalClaimedSupply: totalClaimedSupply.toString(),
-          totalUnclaimedSupply: totalUnclaimedSupply.toString(),
-          totalCount: totalCount.toString(),
-          lockedMetadata,
-          allTokenIds,
-          allOwners,
-          allTokenUris,
-          contractAddress,
-          metadata,
-        });
         setLockedContract({
           totalClaimedSupply,
           totalUnclaimedSupply,
