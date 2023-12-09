@@ -180,6 +180,7 @@ export default function Home() {
           <a
             href="https://thirdweb.com/thirdweb.eth/DropERC721"
             className="text-blue-500 underline"
+            target="_blank"
           >
             NFT Drop contracts
           </a>{" "}
@@ -491,6 +492,7 @@ const DeployNftDrop = ({
                   <a
                     href={`https://${newContractLink}/embed`}
                     className="text-blue-500 underline"
+                    target="_blank"
                   >
                     here
                   </a>{" "}
