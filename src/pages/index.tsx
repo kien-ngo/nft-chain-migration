@@ -50,6 +50,26 @@ type LockedContractInfo = {
   };
 };
 
+/**
+ * Download the snapshot content for AirdropERC721
+ */
+const downloadAirdropContent = async (lockedContract: LockedContractInfo) => {
+  const data = lockedContract.allOwners.map((item) => ({
+    recipient: item.owner,
+    tokenId: item.tokenId,
+  }));
+  const jsonContent = JSON.stringify(data, null, 2);
+  const blob = new Blob([jsonContent], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `snapshot_for_airdrop_erc721.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 export default function Home() {
   const [lockedContract, setLockedContract] = useState<LockedContractInfo>();
   const [isLoadingLockedContract, setIsLoadingLockedContract] = useState(false);
@@ -248,6 +268,12 @@ export default function Home() {
                 {lockedContract.totalUnclaimedSupply.toString()}
               </div>
               <div>Total holders: {lockedContract.allOwners.length}</div>
+              <a
+                onClick={() => downloadAirdropContent(lockedContract)}
+                className="text-blue-500 underline cursor-pointer"
+              >
+                {">>"} Download token holders snapshot {"<<"}
+              </a>
             </div>
           )}
         </div>
@@ -388,26 +414,6 @@ const DeployNftDrop = ({
 
   const newContractLink = `thirdweb.com/${chain?.slug}/${newContractAddress}`;
 
-  /**
-   * Download the snapshot content for AirdropERC721
-   */
-  const downloadAirdropContent = () => {
-    const data = lockedContract.allOwners.map((item) => ({
-      recipient: item.owner,
-      tokenId: item.tokenId,
-    }));
-    const jsonContent = JSON.stringify(data, null, 2);
-    const blob = new Blob([jsonContent], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `snapshot_for_airdrop_erc721.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   const downloadSnapshot = () => {
     alert("Coming soon");
   };
@@ -499,7 +505,7 @@ const DeployNftDrop = ({
                   and distribute <i>the exact tokens</i> to your token holders
                   using{" "}
                   <a
-                    onClick={downloadAirdropContent}
+                    onClick={() => downloadAirdropContent(lockedContract)}
                     className="text-blue-500 underline cursor-pointer"
                   >
                     this snapshot
